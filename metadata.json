@@ -1,0 +1,6 @@
+{
+  "name": "OmniCampus AI",
+  "description": "Intelligent student productivity app for lecture recording, speech-to-text, AI notes, flashcards, and FocusSentry distraction monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
