@@ -30,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,12 @@ data class OnboardingPageData(
 fun OnboardingScreen(
     onFinishOnboarding: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onboardingPrefs = remember { com.example.data.preferences.OnboardingPreferences(context) }
+    val handleFinish: () -> Unit = {
+        onboardingPrefs.completeOnboarding()
+        onFinishOnboarding()
+    }
     val pages = listOf(
         OnboardingPageData(
             title = "Smart Lecture Capture",
@@ -100,7 +107,7 @@ fun OnboardingScreen(
             horizontalArrangement = Arrangement.End
         ) {
             TextButton(
-                onClick = onFinishOnboarding,
+                onClick = handleFinish,
                 modifier = Modifier.testTag("skip_onboarding_button")
             ) {
                 Text(
@@ -202,7 +209,7 @@ fun OnboardingScreen(
         // Bottom CTA Buttons
         if (pagerState.currentPage == pages.size - 1) {
             Button(
-                onClick = onFinishOnboarding,
+                onClick = handleFinish,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
@@ -224,7 +231,7 @@ fun OnboardingScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = onFinishOnboarding,
+                    onClick = handleFinish,
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp),

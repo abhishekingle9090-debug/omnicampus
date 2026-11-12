@@ -23,6 +23,9 @@ interface LectureDao {
     @Query("SELECT * FROM lectures WHERE id = :id LIMIT 1")
     suspend fun getLectureById(id: String): LectureEntity?
 
+    @Query("SELECT * FROM lectures ORDER BY recordedAt DESC LIMIT 1")
+    suspend fun getLatestLecture(): LectureEntity?
+
     @Query("SELECT * FROM lectures ORDER BY recordedAt DESC LIMIT :limit")
     fun getRecentLectures(limit: Int): Flow<List<LectureEntity>>
 
@@ -43,4 +46,10 @@ interface LectureDao {
 
     @Query("DELETE FROM lectures WHERE id = :id")
     suspend fun deleteLectureById(id: String)
+
+    @Query("SELECT * FROM lectures")
+    suspend fun getAllLecturesDirect(): List<LectureEntity>
+
+    @Query("DELETE FROM lectures")
+    suspend fun deleteAllLectures()
 }

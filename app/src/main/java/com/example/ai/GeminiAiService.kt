@@ -71,13 +71,15 @@ class GeminiAiService(private val context: Context? = null) {
         lectureTitle: String,
         subjectName: String,
         noteStyle: String = "ACADEMIC",
-        detailLevel: String = "STANDARD"
+        detailLevel: String = "STANDARD",
+        targetLanguage: String = "en-US"
     ): Result<GeneratedNoteData> = withContext(Dispatchers.IO) {
-        if (transcript.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("Transcript is empty. Cannot generate notes."))
+        val validation = com.example.transcription.TranscriptValidator.validate(transcript)
+        if (!validation.isValid) {
+            return@withContext Result.failure(IllegalArgumentException(validation.reason ?: "No speech detected. Please record the lecture again."))
         }
 
-        val prompt = buildNotePrompt(transcript, lectureTitle, subjectName, noteStyle, detailLevel)
+        val prompt = buildNotePrompt(transcript, lectureTitle, subjectName, noteStyle, detailLevel, targetLanguage)
 
         // 1. Attempt Firebase AI Logic
         try {
@@ -131,9 +133,15 @@ class GeminiAiService(private val context: Context? = null) {
     suspend fun generateFlashcards(
         transcript: String,
         notesOverview: String,
-        subjectName: String
+        subjectName: String,
+        targetLanguage: String = "en-US"
     ): Result<List<GeneratedFlashcardData>> = withContext(Dispatchers.IO) {
-        val prompt = buildFlashcardsPrompt(transcript, notesOverview, subjectName)
+        val validation = com.example.transcription.TranscriptValidator.validate(transcript)
+        if (!validation.isValid) {
+            return@withContext Result.failure(IllegalArgumentException(validation.reason ?: "No speech detected. Please record the lecture again."))
+        }
+
+        val prompt = buildFlashcardsPrompt(transcript, notesOverview, subjectName, targetLanguage)
 
         // 1. Attempt Firebase AI Logic
         try {
@@ -222,37 +230,73 @@ class GeminiAiService(private val context: Context? = null) {
         Triple(score, passed, feedback)
     }
 
+    private fun resolveLanguageName(codeOrName: String): String {
+        return when {
+            codeOrName.startsWith("es", ignoreCase = true) -> "Spanish"
+            codeOrName.startsWith("fr", ignoreCase = true) -> "French"
+            codeOrName.startsWith("de", ignoreCase = true) -> "German"
+            codeOrName.startsWith("hi", ignoreCase = true) -> "Hindi"
+            codeOrName.startsWith("zh", ignoreCase = true) -> "Mandarin Chinese"
+            codeOrName.startsWith("ja", ignoreCase = true) -> "Japanese"
+            codeOrName.startsWith("pt", ignoreCase = true) -> "Portuguese"
+            codeOrName.startsWith("ar", ignoreCase = true) -> "Arabic"
+            codeOrName.startsWith("ru", ignoreCase = true) -> "Russian"
+            codeOrName.startsWith("it", ignoreCase = true) -> "Italian"
+            codeOrName.startsWith("ko", ignoreCase = true) -> "Korean"
+            codeOrName.startsWith("bn", ignoreCase = true) -> "Bengali"
+            codeOrName.startsWith("te", ignoreCase = true) -> "Telugu"
+            codeOrName.startsWith("mr", ignoreCase = true) -> "Marathi"
+            codeOrName.startsWith("ta", ignoreCase = true) -> "Tamil"
+            codeOrName.startsWith("ur", ignoreCase = true) -> "Urdu"
+            codeOrName.startsWith("en", ignoreCase = true) -> "English"
+            else -> codeOrName.ifBlank { "English" }
+        }
+    }
+
     private fun buildNotePrompt(
         transcript: String,
         lectureTitle: String,
         subjectName: String,
         noteStyle: String,
-        detailLevel: String
+        detailLevel: String,
+        targetLanguage: String = "en-US"
     ): String {
+        val languageName = resolveLanguageName(targetLanguage)
         return """
-            You are an expert academic tutor for higher education students.
-            Transform this lecture transcript for the subject '$subjectName' into structured, high-yield academic notes.
+            You are a distinguished university professor and academic tutor specializing in '$subjectName'.
+            Transform this lecture transcript for the subject '$subjectName' into deep, structured, high-yield academic study notes.
             Lecture Title: $lectureTitle
             Requested Style: $noteStyle
             Detail Level: $detailLevel
+            Target Output Language: $languageName ($targetLanguage)
+
+            LANGUAGE REQUIREMENT:
+            - Write all generated notes (title, overview, key concepts, definitions, examples, formulas description, important points, summary, revision questions) ENTIRELY in $languageName.
+            - Standard international mathematical notation and code symbols can remain intact.
+
+            ACADEMIC DEPTH & RIGOR:
+            - Provide thorough, deep explanations: unpack core theoretical mechanisms and explain WHY each concept matters.
+            - In "examples": Provide 3 to 5 concrete real-world case studies or practical application scenarios based on the lecture topics.
+            - In "importantPoints": Highlight critical edge cases, boundary conditions, and common exam pitfalls/misconceptions students encounter.
+            - In "formulas": Break down every equation into its name, mathematical expression, and detailed breakdown of each variable/parameter and usage context.
+            - In "revisionQuestions": Formulate high-level conceptual questions suitable for university exam preparation.
 
             ACCURACY RULES:
-            - The provided transcript is the PRIMARY source.
-            - Do NOT invent facts or attribute fabricated statements to the lecturer.
-            - Preserve all technical terms, acronyms, and formulas.
-            - If any concept is partially explained or unclear in the transcript, state it clearly.
+            - The provided transcript is the EXCLUSIVE source of truth.
+            - Do NOT invent facts or concepts not grounded in the transcript.
+            - If the transcript has no intelligible educational content or speech, return an empty JSON object with "overview": "NO_CONTENT".
 
             Return a valid JSON object matching this schema:
             {
               "title": "$lectureTitle",
-              "overview": "Comprehensive overview of the lecture topic and significance",
-              "keyConcepts": ["List of core takeaways and principles"],
-              "definitions": [{"term": "Key Term", "definition": "Precise academic definition"}],
-              "examples": ["Concrete real-world or theoretical examples referenced"],
-              "formulas": [{"name": "Formula Name", "formula": "Mathematical or algorithmic formula", "description": "Usage context"}],
-              "importantPoints": ["Critical points, edge cases, or potential exam pitfalls"],
-              "summary": "Concise synthesis tying the lecture together",
-              "revisionQuestions": ["Thought-provoking questions to test comprehension"]
+              "overview": "Comprehensive deep overview of the lecture topic, theoretical context, and significance",
+              "keyConcepts": ["List of core takeaways, mechanisms, and principles with clear explanations"],
+              "definitions": [{"term": "Key Term", "definition": "Precise, rigorous academic definition"}],
+              "examples": ["3 to 5 detailed real-world case studies or practical application scenarios"],
+              "formulas": [{"name": "Formula Name", "formula": "Mathematical or algorithmic expression", "description": "Breakdown of variables and practical context"}],
+              "importantPoints": ["Edge cases, boundary conditions, and common exam pitfalls"],
+              "summary": "Concise synthesis tying the theoretical insights of the lecture together",
+              "revisionQuestions": ["Challenging comprehension and exam-preparation questions"]
             }
 
             Transcript:
@@ -260,20 +304,31 @@ class GeminiAiService(private val context: Context? = null) {
         """.trimIndent()
     }
 
-    private fun buildFlashcardsPrompt(transcript: String, notesOverview: String, subjectName: String): String {
+    private fun buildFlashcardsPrompt(
+        transcript: String,
+        notesOverview: String,
+        subjectName: String,
+        targetLanguage: String = "en-US"
+    ): String {
+        val languageName = resolveLanguageName(targetLanguage)
         return """
-            Create 5 to 8 high-quality revision flashcards based on this lecture content for '$subjectName'.
+            Create 5 to 8 high-quality active recall revision flashcards based EXCLUSIVELY on this lecture transcript.
             Overview: $notesOverview
+            Target Language: $languageName ($targetLanguage)
             Transcript: ${transcript.take(8000)}
 
-            Requirements:
+            STRICT RULES:
+            - Output all questions and answers in $languageName.
+            - Generate questions and answers ONLY from concepts and facts explicitly stated in the transcript.
+            - Do NOT invent general subject questions outside the transcript text.
+            - If the transcript does not contain enough clear concepts, return an empty array: []
             - Vary card types: DEFINITION, CONCEPT, SHORT_ANSWER, TECHNICAL, FORMULA
             - Grade difficulty: EASY, MEDIUM, or HARD
             - Format must be strict JSON array:
             [
               {
-                "question": "Clear, direct revision question",
-                "answer": "Concise, unambiguous answer",
+                "question": "Clear, direct active recall question",
+                "answer": "Concise, precise answer",
                 "type": "CONCEPT",
                 "difficulty": "MEDIUM"
               }
@@ -535,22 +590,16 @@ class GeminiAiService(private val context: Context? = null) {
             }
         }
 
-        if (cards.isEmpty()) {
-            cards.add(
-                GeneratedFlashcardData(
-                    question = "What is the primary topic of this lecture?",
-                    answer = sentences.firstOrNull() ?: "Review transcript summary.",
-                    type = "CONCEPT",
-                    difficulty = "MEDIUM"
-                )
-            )
-            if (sentences.size > 1) {
+        if (cards.isEmpty() && sentences.size >= 2) {
+            // Only extract if there is actual substantial content
+            val firstSentence = sentences.first()
+            if (firstSentence.length > 20) {
                 cards.add(
                     GeneratedFlashcardData(
-                        question = "What is a key principle highlighted in this material?",
-                        answer = sentences[1],
-                        type = "TECHNICAL",
-                        difficulty = "HARD"
+                        question = "Key concept from lecture opening:",
+                        answer = firstSentence,
+                        type = "CONCEPT",
+                        difficulty = "MEDIUM"
                     )
                 )
             }

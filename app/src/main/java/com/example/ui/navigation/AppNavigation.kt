@@ -66,8 +66,12 @@ fun AppNavigation(
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onboardingPrefs = androidx.compose.runtime.remember { com.example.data.preferences.OnboardingPreferences(context) }
     val userProfile by viewModel.userProfile.collectAsState()
-    val hasCompletedOnboarding = userProfile?.hasCompletedOnboarding ?: false
+    val hasCompletedOnboarding = androidx.compose.runtime.remember(onboardingPrefs, userProfile) {
+        onboardingPrefs.isOnboardingCompleted || !onboardingPrefs.isFirstLaunch || (userProfile?.hasCompletedOnboarding == true)
+    }
 
     val bottomNavItems = listOf(
         BottomNavItem(
@@ -123,7 +127,12 @@ fun AppNavigation(
                             selected = isSelected,
                             onClick = {
                                 if (currentRoute != item.route) {
-                                    navController.navigate(item.route) {
+                                    val destination = if (item.route == Screen.Flashcards.route) {
+                                        Screen.Flashcards.createRoute(null)
+                                    } else {
+                                        item.route
+                                    }
+                                    navController.navigate(destination) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
                                         }
@@ -176,6 +185,7 @@ fun AppNavigation(
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(
                     onFinishOnboarding = {
+                        onboardingPrefs.completeOnboarding()
                         viewModel.completeOnboarding()
                         navController.navigate(Screen.Home.route) {
                             popUpTo(Screen.Onboarding.route) { inclusive = true }
@@ -195,7 +205,7 @@ fun AppNavigation(
                     onNavigateToTranscript = { lectureId ->
                         navController.navigate(Screen.LectureReview.createRoute(lectureId))
                     },
-                    onNavigateToFlashcards = { navController.navigate(Screen.Flashcards.route) },
+                    onNavigateToFlashcards = { navController.navigate(Screen.Flashcards.createRoute(null)) },
                     onNavigateToFocus = { navController.navigate(Screen.Focus.route) }
                 )
             }
@@ -242,8 +252,11 @@ fun AppNavigation(
                     onNavigateToNoteGen = { id ->
                         navController.navigate(Screen.NoteGenerator.createRoute(id))
                     },
-                    onNavigateToFlashcards = {
-                        navController.navigate(Screen.Flashcards.route)
+                    onNavigateToNoteDetail = { noteId ->
+                        navController.navigate(Screen.NoteDetail.createRoute(noteId))
+                    },
+                    onNavigateToFlashcards = { id ->
+                        navController.navigate(Screen.Flashcards.createRoute(id))
                     }
                 )
             }
@@ -292,9 +305,20 @@ fun AppNavigation(
                 )
             }
 
-            composable(Screen.Flashcards.route) {
+            composable(
+                route = Screen.Flashcards.route,
+                arguments = listOf(
+                    navArgument("lectureId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                val lectureId = backStackEntry.arguments?.getString("lectureId")
                 FlashcardsScreen(
                     viewModel = viewModel,
+                    lectureId = lectureId,
                     onNavigateBack = { navController.popBackStack() }
                 )
             }

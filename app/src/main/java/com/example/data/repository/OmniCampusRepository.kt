@@ -57,6 +57,10 @@ class OmniCampusRepository(private val database: OmniCampusDatabase) {
         database.lectureDao().getLectureById(id)
     }
 
+    suspend fun getLatestLecture(): LectureEntity? = withContext(Dispatchers.IO) {
+        database.lectureDao().getLatestLecture()
+    }
+
     fun searchLectures(query: String): Flow<List<LectureEntity>> {
         return database.lectureDao().searchLectures(query)
     }
@@ -77,7 +81,26 @@ class OmniCampusRepository(private val database: OmniCampusDatabase) {
                 if (file.exists()) file.delete()
             } catch (_: Exception) {}
         }
+        database.transcriptDao().deleteTranscriptByLectureId(lecture.id)
+        database.noteDao().deleteNotesByLecture(lecture.id)
+        database.flashcardDao().deleteFlashcardsByLecture(lecture.id)
         database.lectureDao().deleteLecture(lecture)
+    }
+
+    suspend fun deleteAllLectures() = withContext(Dispatchers.IO) {
+        val lectures = database.lectureDao().getAllLecturesDirect()
+        lectures.forEach { lecture ->
+            lecture.audioFilePath?.let { path ->
+                try {
+                    val file = File(path)
+                    if (file.exists()) file.delete()
+                } catch (_: Exception) {}
+            }
+        }
+        database.transcriptDao().deleteAllTranscripts()
+        database.noteDao().deleteAllNotes()
+        database.flashcardDao().deleteAllFlashcards()
+        database.lectureDao().deleteAllLectures()
     }
 
     // Transcripts
@@ -87,6 +110,10 @@ class OmniCampusRepository(private val database: OmniCampusDatabase) {
 
     suspend fun getTranscriptDirect(lectureId: String): TranscriptEntity? = withContext(Dispatchers.IO) {
         database.transcriptDao().getTranscriptDirect(lectureId)
+    }
+
+    suspend fun getLatestTranscript(): TranscriptEntity? = withContext(Dispatchers.IO) {
+        database.transcriptDao().getLatestTranscript()
     }
 
     suspend fun insertOrUpdateTranscript(transcript: TranscriptEntity) = withContext(Dispatchers.IO) {
@@ -129,6 +156,14 @@ class OmniCampusRepository(private val database: OmniCampusDatabase) {
         database.noteDao().updateNote(note)
     }
 
+    fun getLatestNoteByLecture(lectureId: String): Flow<NoteEntity?> {
+        return database.noteDao().getLatestNoteByLecture(lectureId)
+    }
+
+    suspend fun deleteNotesByLecture(lectureId: String) = withContext(Dispatchers.IO) {
+        database.noteDao().deleteNotesByLecture(lectureId)
+    }
+
     suspend fun deleteNote(note: NoteEntity) = withContext(Dispatchers.IO) {
         database.noteDao().deleteNote(note)
     }
@@ -143,6 +178,18 @@ class OmniCampusRepository(private val database: OmniCampusDatabase) {
 
     fun getFlashcardsByLecture(lectureId: String): Flow<List<FlashcardEntity>> {
         return database.flashcardDao().getFlashcardsByLecture(lectureId)
+    }
+
+    fun getFlashcardsForLecture(lectureId: String): Flow<List<FlashcardEntity>> {
+        return database.flashcardDao().getFlashcardsForLecture(lectureId)
+    }
+
+    suspend fun deleteFlashcardsByLecture(lectureId: String) = withContext(Dispatchers.IO) {
+        database.flashcardDao().deleteFlashcardsByLecture(lectureId)
+    }
+
+    suspend fun deleteFlashcardsForLecture(lectureId: String) = withContext(Dispatchers.IO) {
+        database.flashcardDao().deleteFlashcardsForLecture(lectureId)
     }
 
     fun getDueFlashcards(currentTime: Long = System.currentTimeMillis()): Flow<List<FlashcardEntity>> {

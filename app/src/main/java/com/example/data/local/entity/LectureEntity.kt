@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["subjectId"])]
+    indices = [Index(value = ["subjectId"]), Index(value = ["recordedAt"])]
 )
 data class LectureEntity(
     @PrimaryKey

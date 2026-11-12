@@ -52,9 +52,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.transcription.TranscriptValidator
 import com.example.ui.theme.BrandCyan
 import com.example.ui.theme.BrandViolet
 import com.example.ui.theme.ErrorRed
+import com.example.ui.theme.WarningAmber
 import com.example.viewmodel.OmniCampusViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,6 +78,9 @@ fun NoteGeneratorScreen(
     var selectedStyle by remember { mutableStateOf("ACADEMIC") }
     var selectedDetail by remember { mutableStateOf("STANDARD") }
 
+    val transcriptText = transcript?.correctedText ?: transcript?.originalText ?: ""
+    val isTranscriptValid = remember(transcriptText) { TranscriptValidator.isValid(transcriptText) }
+
     val styles = listOf(
         "ACADEMIC" to "Detailed Academic Notes",
         "CONCISE" to "Concise Revision Notes",
@@ -91,8 +96,16 @@ fun NoteGeneratorScreen(
         "COMPREHENSIVE" to "Deep Dive"
     )
 
-    LaunchedEffect(noteGenState.generatedNote) {
-        noteGenState.generatedNote?.let { note ->
+    // Clear stale state when entering for this specific lecture
+    LaunchedEffect(lectureId) {
+        viewModel.clearNoteGenState()
+    }
+
+    // Only navigate if the note was generated specifically for THIS lectureId
+    LaunchedEffect(noteGenState.generatedNote, noteGenState.targetLectureId) {
+        val note = noteGenState.generatedNote
+        if (note != null && note.lectureId == lectureId && noteGenState.targetLectureId == lectureId) {
+            viewModel.clearNoteGenState()
             onNavigateToNoteDetail(note.id)
         }
     }
@@ -139,9 +152,13 @@ fun NoteGeneratorScreen(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Transcript Status: ${if (transcript != null) "Confirmed (${transcript?.correctedText?.length ?: 0} characters)" else "Not ready"}",
+                        text = when {
+                            transcript == null -> "Transcript Status: Not ready"
+                            !isTranscriptValid -> "Transcript Status: Empty or no speech detected"
+                            else -> "Transcript Status: Confirmed (${transcriptText.length} characters)"
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = BrandCyan
+                        color = if (transcript != null && !isTranscriptValid) ErrorRed else BrandCyan
                     )
                 }
             }
@@ -264,6 +281,33 @@ fun NoteGeneratorScreen(
                 }
             }
 
+            if (transcript != null && !isTranscriptValid) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.12f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = ErrorRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Cannot synthesize notes or flashcards: No meaningful speech detected in this lecture. Please record audio with spoken content.",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                            color = ErrorRed
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(28.dp))
 
             if (noteGenState.isGenerating) {
@@ -282,7 +326,7 @@ fun NoteGeneratorScreen(
             } else {
                 Button(
                     onClick = {
-                        if (lecture != null && transcript != null) {
+                        if (lecture != null && transcript != null && isTranscriptValid) {
                             viewModel.generateAiNotes(
                                 lecture = lecture,
                                 transcript = transcript!!,
@@ -295,7 +339,7 @@ fun NoteGeneratorScreen(
                         .fillMaxWidth()
                         .height(54.dp)
                         .testTag("btn_synthesize_notes"),
-                    enabled = transcript != null,
+                    enabled = transcript != null && isTranscriptValid,
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = BrandViolet)
                 ) {

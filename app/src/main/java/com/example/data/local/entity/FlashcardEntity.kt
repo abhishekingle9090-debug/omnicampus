@@ -21,7 +21,12 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["subjectId"]), Index(value = ["lectureId"])]
+    indices = [
+        Index(value = ["subjectId"]),
+        Index(value = ["lectureId"]),
+        Index(value = ["nextReviewAt"]),
+        Index(value = ["createdAt"])
+    ]
 )
 data class FlashcardEntity(
     @PrimaryKey

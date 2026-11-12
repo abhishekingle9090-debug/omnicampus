@@ -108,6 +108,7 @@ fun FocusScreen(
     var newAppName by remember { mutableStateOf("") }
 
     val hasUsageAccess = viewModel.focusSentryManager.hasUsageStatsPermission()
+    val hasOverlayAccess = viewModel.focusSentryManager.hasOverlayPermission()
 
     Scaffold(
         topBar = {
@@ -408,25 +409,40 @@ fun FocusScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Distraction App Guard",
+                            text = "Distraction App Guard & Lock",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = if (hasUsageAccess) "Usage Access Active (Battery-friendly polling)" else "Requires Usage Access in Android Settings",
+                            text = when {
+                                !hasUsageAccess -> "Requires Usage Access to detect distracting apps"
+                                !hasOverlayAccess -> "Requires Overlay Permission to physically block apps"
+                                else -> "Active: Real-Time App Blocking & Voice Unlock"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (hasUsageAccess) SuccessGreen else WarningAmber
+                            color = if (hasUsageAccess && hasOverlayAccess) SuccessGreen else WarningAmber
                         )
                     }
 
-                    if (!hasUsageAccess) {
-                        OutlinedButton(
-                            onClick = { context.startActivity(viewModel.focusSentryManager.requestUsageAccessIntent()) },
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Grant Access", fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!hasUsageAccess) {
+                            OutlinedButton(
+                                onClick = { context.startActivity(viewModel.focusSentryManager.requestUsageAccessIntent()) },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Usage Access", fontSize = 11.sp)
+                            }
+                        }
+                        if (!hasOverlayAccess) {
+                            Button(
+                                onClick = { context.startActivity(viewModel.focusSentryManager.requestOverlayPermissionIntent()) },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandViolet)
+                            ) {
+                                Text("Enable Overlay", fontSize = 11.sp, color = Color.White)
+                            }
                         }
                     }
                 }

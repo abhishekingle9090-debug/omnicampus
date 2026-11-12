@@ -14,8 +14,12 @@ interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
     fun getAllNotes(): Flow<List<NoteEntity>>
 
+    // Strict lectureId filtering
     @Query("SELECT * FROM notes WHERE lectureId = :lectureId ORDER BY createdAt DESC")
     fun getNotesByLecture(lectureId: String): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE lectureId = :lectureId ORDER BY createdAt DESC")
+    fun getNotesForLecture(lectureId: String): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE subjectId = :subjectId ORDER BY createdAt DESC")
     fun getNotesBySubject(subjectId: String): Flow<List<NoteEntity>>
@@ -43,6 +47,23 @@ interface NoteDao {
 
     @Delete
     suspend fun deleteNote(note: NoteEntity)
+
+    // Strict lectureId filtering for latest note
+    @Query("SELECT * FROM notes WHERE lectureId = :lectureId ORDER BY createdAt DESC LIMIT 1")
+    fun getLatestNoteByLecture(lectureId: String): Flow<NoteEntity?>
+
+    @Query("SELECT * FROM notes WHERE lectureId = :lectureId ORDER BY createdAt DESC LIMIT 1")
+    suspend fun getLatestNoteByLectureDirect(lectureId: String): NoteEntity?
+
+    // Strict lectureId deletion
+    @Query("DELETE FROM notes WHERE lectureId = :lectureId")
+    suspend fun deleteNotesByLecture(lectureId: String)
+
+    @Query("DELETE FROM notes WHERE lectureId = :lectureId")
+    suspend fun deleteNotesForLecture(lectureId: String)
+
+    @Query("DELETE FROM notes")
+    suspend fun deleteAllNotes()
 
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNoteById(id: String)

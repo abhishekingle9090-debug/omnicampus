@@ -19,6 +19,9 @@ interface TranscriptDao {
     @Query("SELECT * FROM transcripts WHERE id = :id LIMIT 1")
     suspend fun getTranscriptById(id: String): TranscriptEntity?
 
+    @Query("SELECT * FROM transcripts ORDER BY updatedAt DESC LIMIT 1")
+    suspend fun getLatestTranscript(): TranscriptEntity?
+
     @Query("SELECT * FROM transcripts WHERE originalText LIKE '%' || :query || '%' OR correctedText LIKE '%' || :query || '%'")
     fun searchTranscripts(query: String): Flow<List<TranscriptEntity>>
 
@@ -30,4 +33,7 @@ interface TranscriptDao {
 
     @Query("DELETE FROM transcripts WHERE lectureId = :lectureId")
     suspend fun deleteTranscriptByLectureId(lectureId: String)
+
+    @Query("DELETE FROM transcripts")
+    suspend fun deleteAllTranscripts()
 }

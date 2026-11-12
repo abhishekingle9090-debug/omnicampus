@@ -42,7 +42,7 @@ import java.util.UUID
         FocusSessionEntity::class,
         DistractionAppEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class OmniCampusDatabase : RoomDatabase() {
@@ -76,8 +76,14 @@ abstract class OmniCampusDatabase : RoomDatabase() {
         }
 
         private class DatabaseCallback : Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                db.execSQL("PRAGMA foreign_keys = ON;")
+            }
+
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
+                db.execSQL("PRAGMA foreign_keys = ON;")
                 INSTANCE?.let { database ->
                     CoroutineScope(Dispatchers.IO).launch {
                         populateInitialStarterData(database)

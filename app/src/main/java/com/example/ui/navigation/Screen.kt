@@ -18,7 +18,10 @@ sealed class Screen(val route: String) {
     data object NoteDetail : Screen("note_detail/{noteId}") {
         fun createRoute(noteId: String) = "note_detail/$noteId"
     }
-    data object Flashcards : Screen("flashcards")
+    data object Flashcards : Screen("flashcards?lectureId={lectureId}") {
+        fun createRoute(lectureId: String? = null): String =
+            if (!lectureId.isNullOrBlank()) "flashcards?lectureId=$lectureId" else "flashcards"
+    }
     data object Focus : Screen("focus")
     data object Profile : Screen("profile")
 }

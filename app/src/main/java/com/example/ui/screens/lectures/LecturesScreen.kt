@@ -75,6 +75,7 @@ fun LecturesScreen(
     var query by remember { mutableStateOf("") }
     var selectedSubjectId by remember { mutableStateOf<String?>(null) }
     var lectureToDelete by remember { mutableStateOf<LectureEntity?>(null) }
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     val filteredLectures = allLectures.filter { lecture ->
         val matchesSubject = selectedSubjectId == null || lecture.subjectId == selectedSubjectId
@@ -106,11 +107,22 @@ fun LecturesScreen(
         ) {
             // Header & Search
             Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "Lecture Vault",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Lecture Vault",
+                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    if (allLectures.isNotEmpty()) {
+                        TextButton(onClick = { showDeleteAllDialog = true }) {
+                            Text("Clear All", color = ErrorRed)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
@@ -193,6 +205,29 @@ fun LecturesScreen(
             },
             dismissButton = {
                 TextButton(onClick = { lectureToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            title = { Text("Delete All Lectures?") },
+            text = { Text("Are you sure you want to delete ALL recorded lectures? All audio recordings, transcripts, notes, and flashcards will be permanently removed.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteAllLectures()
+                        showDeleteAllDialog = false
+                    }
+                ) {
+                    Text("Delete All", color = ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) {
                     Text("Cancel")
                 }
             }

@@ -21,7 +21,11 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["lectureId"]), Index(value = ["subjectId"])]
+    indices = [
+        Index(value = ["lectureId"]),
+        Index(value = ["subjectId"]),
+        Index(value = ["createdAt"])
+    ]
 )
 data class NoteEntity(
     @PrimaryKey

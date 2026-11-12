@@ -92,8 +92,8 @@ sealed class TranscriptionFailure(override val message: String, val recoveryActi
     class ApiKeyMissing(action: String = "Tap 'Configure API Key' to enter your Gemini key, or select Android System Speech Services.") :
         TranscriptionFailure("Gemini API key is not configured.", action)
 
-    class EmptyTranscription(action: String = "Ensure the speaker's voice is distinct from background classroom noise.") :
-        TranscriptionFailure("Speech recognition finished but no words could be recognized.", action)
+    class EmptyTranscription(action: String = "Ensure microphone is close to the speaker and not muted. Please record the lecture again.") :
+        TranscriptionFailure("No speech detected. Please record the lecture again.", action)
 }
 
 interface SpeechToTextEngine {
@@ -180,6 +180,7 @@ class GeminiAudioTranscriber(private val context: Context) : SpeechToTextEngine 
             - Preserve all technical terminology, academic concepts, formulas, and acronyms.
             - Format with clear sentence boundaries, proper punctuation, and readable paragraphs.
             - Do NOT add introductory greetings or concluding conversational remarks. Output only the verbatim transcript text.
+            - If the audio contains only silence, background noise, static, or no recognizable human speech, output exactly: NO_SPEECH_DETECTED
         """.trimIndent()
 
         val apiKey = com.example.ai.ApiKeyManager.getApiKey(context)
@@ -212,7 +213,7 @@ class GeminiAudioTranscriber(private val context: Context) : SpeechToTextEngine 
             }
 
             val fullRecognizedText = chunkResults.joinToString("\n\n")
-            if (fullRecognizedText.isBlank()) {
+            if (!TranscriptValidator.isValid(fullRecognizedText)) {
                 return@withContext Result.failure(TranscriptionFailure.EmptyTranscription())
             }
 
@@ -238,7 +239,7 @@ class GeminiAudioTranscriber(private val context: Context) : SpeechToTextEngine 
             val result = transcribeAudioPayload(audioBytes, mimeType, basePrompt, apiKey)
             return@withContext result.fold(
                 onSuccess = { recognizedText ->
-                    if (recognizedText.isBlank()) {
+                    if (!TranscriptValidator.isValid(recognizedText)) {
                         Result.failure(TranscriptionFailure.EmptyTranscription())
                     } else {
                         onProgress(1.0f)
@@ -327,7 +328,7 @@ class GeminiAudioTranscriber(private val context: Context) : SpeechToTextEngine 
                                 }
                             }
                             val recognizedText = textBuilder.toString().trim()
-                            if (recognizedText.isNotBlank()) {
+                            if (TranscriptValidator.isValid(recognizedText)) {
                                 Log.i(TAG, "Audio successfully transcribed using model $model (attempt $attempt)")
                                 return Result.success(recognizedText)
                             } else {

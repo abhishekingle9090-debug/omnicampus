@@ -87,6 +87,7 @@ import com.example.ui.theme.BrandViolet
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.theme.WarningAmber
+import com.example.transcription.TranscriptValidator
 import com.example.viewmodel.OmniCampusViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -102,7 +103,8 @@ fun LectureReviewScreen(
     onNavigateToHome: () -> Unit,
     onNavigateToTranscript: (String) -> Unit,
     onNavigateToNoteGen: (String) -> Unit,
-    onNavigateToFlashcards: () -> Unit
+    onNavigateToNoteDetail: (String) -> Unit,
+    onNavigateToFlashcards: (String) -> Unit
 ) {
     val context = LocalContext.current
     val lectures by viewModel.lectures.collectAsState()
@@ -114,6 +116,13 @@ fun LectureReviewScreen(
 
     val transcriptFlow = remember(lectureId) { viewModel.repository.getTranscriptByLecture(lectureId) }
     val transcript by transcriptFlow.collectAsState(initial = null)
+
+    val notesFlow = remember(lectureId) { viewModel.repository.getNotesByLecture(lectureId) }
+    val notesForLecture by notesFlow.collectAsState(initial = emptyList())
+    val latestNote = notesForLecture.firstOrNull()
+
+    val flashcardsFlow = remember(lectureId) { viewModel.repository.getFlashcardsByLecture(lectureId) }
+    val flashcardsForLecture by flashcardsFlow.collectAsState(initial = emptyList())
 
     val transcriptionState by viewModel.transcriptionState.collectAsState()
     val playerState by viewModel.audioPlayer.playerState.collectAsState()
@@ -633,12 +642,38 @@ fun LectureReviewScreen(
 
                         // Preview of transcript
                         val previewText = transcript?.correctedText ?: transcript?.originalText ?: ""
-                        Text(
-                            text = previewText.take(240) + if (previewText.length > 240) "..." else "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 20.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        val hasValidSpeech = TranscriptValidator.isValid(previewText)
+
+                        if (previewText.isNotBlank()) {
+                            Text(
+                                text = previewText.take(240) + if (previewText.length > 240) "..." else "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 20.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        if (!hasValidSpeech) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                color = WarningAmber.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = WarningAmber, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "No meaningful speech detected in this lecture transcript. AI notes and flashcards cannot be generated from empty audio.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(14.dp))
 
@@ -659,17 +694,33 @@ fun LectureReviewScreen(
                                 Text("View & Edit", color = BrandViolet)
                             }
 
-                            Button(
-                                onClick = { onNavigateToNoteGen(lectureId) },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandViolet)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("AI Notes", color = Color.White)
+                            if (latestNote != null) {
+                                Button(
+                                    onClick = { onNavigateToNoteDetail(latestNote.id) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen)
+                                ) {
+                                    Icon(Icons.Default.Description, contentDescription = null, tint = Color.White)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Read Notes", color = Color.White)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { onNavigateToNoteGen(lectureId) },
+                                    enabled = hasValidSpeech,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandViolet)
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("AI Notes", color = Color.White)
+                                }
                             }
                         }
                     }
@@ -684,7 +735,7 @@ fun LectureReviewScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = onNavigateToFlashcards,
+                    onClick = { onNavigateToFlashcards(lectureId) },
                     modifier = Modifier
                         .weight(1f)
                         .height(50.dp),
@@ -692,7 +743,10 @@ fun LectureReviewScreen(
                 ) {
                     Icon(Icons.Default.Psychology, contentDescription = null, tint = BrandCyan)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Study Flashcards")
+                    Text(
+                        if (flashcardsForLecture.isEmpty()) "Study Flashcards"
+                        else "Study Flashcards (${flashcardsForLecture.size})"
+                    )
                 }
 
                 Button(

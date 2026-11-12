@@ -18,8 +18,12 @@ interface FlashcardDao {
     @Query("SELECT * FROM flashcards WHERE subjectId = :subjectId ORDER BY createdAt DESC")
     fun getFlashcardsBySubject(subjectId: String): Flow<List<FlashcardEntity>>
 
+    // Strict lecture-scoped queries: Only fetch flashcards belonging strictly to lectureId
     @Query("SELECT * FROM flashcards WHERE lectureId = :lectureId ORDER BY createdAt DESC")
     fun getFlashcardsByLecture(lectureId: String): Flow<List<FlashcardEntity>>
+
+    @Query("SELECT * FROM flashcards WHERE lectureId = :lectureId ORDER BY createdAt DESC")
+    fun getFlashcardsForLecture(lectureId: String): Flow<List<FlashcardEntity>>
 
     @Query("SELECT * FROM flashcards WHERE nextReviewAt <= :currentTime ORDER BY nextReviewAt ASC")
     fun getDueFlashcards(currentTime: Long): Flow<List<FlashcardEntity>>
@@ -47,6 +51,19 @@ interface FlashcardDao {
 
     @Query("DELETE FROM flashcards WHERE id = :id")
     suspend fun deleteFlashcardById(id: String)
+
+    // Strict lecture-scoped delete: Only delete flashcards belonging to this lecture
+    @Query("DELETE FROM flashcards WHERE lectureId = :lectureId")
+    suspend fun deleteFlashcardsByLecture(lectureId: String)
+
+    @Query("DELETE FROM flashcards WHERE lectureId = :lectureId")
+    suspend fun deleteFlashcardsForLecture(lectureId: String)
+
+    @Query("DELETE FROM flashcards WHERE noteId = :noteId")
+    suspend fun deleteFlashcardsByNote(noteId: String)
+
+    @Query("DELETE FROM flashcards")
+    suspend fun deleteAllFlashcards()
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReview(review: FlashcardReviewEntity)

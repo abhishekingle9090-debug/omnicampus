@@ -24,13 +24,16 @@ import com.example.transcription.GeminiAudioTranscriber
 import com.example.transcription.SpeechToTextEngine
 import com.example.transcription.TranscriptCorrectionHelper
 import com.example.transcription.TranscriptSegment
+import com.example.transcription.TranscriptValidator
 import com.example.transcription.TranscriptionFailure
 import com.example.transcription.VoskOfflineEngine
 import com.example.transcription.WordDiff
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -42,6 +45,7 @@ private const val TAG = "OmniCampusViewModel"
 
 data class TranscriptionUiState(
     val isTranscribing: Boolean = false,
+    val activeLectureId: String? = null,
     val progress: Float = 0f,
     val stageMessage: String? = null,
     val error: String? = null,
@@ -52,6 +56,7 @@ data class TranscriptionUiState(
 
 data class AiNoteGenState(
     val isGenerating: Boolean = false,
+    val targetLectureId: String? = null,
     val error: String? = null,
     val generatedNote: NoteEntity? = null
 )
@@ -153,6 +158,15 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = 0
     )
 
+    val latestLecture: StateFlow<LectureEntity?> = repository.allLectures.map { it.firstOrNull() }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    suspend fun getLatestLecture(): LectureEntity? = repository.getLatestLecture()
+    suspend fun getLatestTranscript(): TranscriptEntity? = repository.getLatestTranscript()
+
     // Notes
     val notes: StateFlow<List<NoteEntity>> = repository.allNotes.stateIn(
         scope = viewModelScope,
@@ -191,6 +205,24 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = 0
     )
 
+    // Lecture-scoped flashcards state with explicit clearing & cancellation
+    private val _flashcardsState = MutableStateFlow<List<FlashcardEntity>>(emptyList())
+    val flashcardsState: StateFlow<List<FlashcardEntity>> = _flashcardsState.asStateFlow()
+    private var flashcardLoadJob: Job? = null
+
+    fun loadFlashcards(lectureId: String) {
+        flashcardLoadJob?.cancel()
+        // 1. Clear old state immediately so previous lecture cards are not shown
+        _flashcardsState.value = emptyList()
+
+        // 2. Fetch new lecture's cards with strict lectureId filtering
+        flashcardLoadJob = viewModelScope.launch {
+            repository.getFlashcardsForLecture(lectureId).collect { cards ->
+                _flashcardsState.value = cards
+            }
+        }
+    }
+
     // Active Recording Form State
     val recordingFormTitle = MutableStateFlow("")
     val recordingFormSubjectId = MutableStateFlow("")
@@ -210,6 +242,19 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
     // AI Note Generation state
     private val _noteGenState = MutableStateFlow(AiNoteGenState())
     val noteGenState: StateFlow<AiNoteGenState> = _noteGenState.asStateFlow()
+    private var noteGenJob: Job? = null
+
+    // Track lecture ID of currently active recording session
+    val activeRecordingLectureId = MutableStateFlow<String?>(null)
+
+    fun clearNoteGenState() {
+        noteGenJob?.cancel()
+        _noteGenState.value = AiNoteGenState()
+    }
+
+    fun clearTranscriptionState() {
+        _transcriptionState.value = TranscriptionUiState()
+    }
 
     init {
         // Check initial profile
@@ -382,6 +427,7 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
     // ================= RECORDING OPERATIONS =================
 
     fun startLectureRecording(lectureId: String, title: String): Boolean {
+        activeRecordingLectureId.value = lectureId
         val started = wavRecorder.startRecording(lectureId)
         if (started) {
             LectureRecordingService.start(getApplication(), title.ifBlank { "OmniCampus Lecture" })
@@ -394,6 +440,7 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
     fun resumeLectureRecording() = wavRecorder.resumeRecording()
 
     fun cancelLectureRecording() {
+        activeRecordingLectureId.value = null
         wavRecorder.cancelRecording()
         LectureRecordingService.stop(getApplication())
     }
@@ -403,7 +450,8 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         LectureRecordingService.stop(getApplication())
 
         val duration = wavRecorder.status.value.durationSeconds
-        val lectureId = UUID.randomUUID().toString()
+        val lectureId = activeRecordingLectureId.value ?: UUID.randomUUID().toString()
+        activeRecordingLectureId.value = null
 
         val lecture = LectureEntity(
             id = lectureId,
@@ -434,6 +482,7 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _transcriptionState.value = TranscriptionUiState(
                 isTranscribing = true,
+                activeLectureId = lecture.id,
                 progress = 0.05f,
                 stageMessage = "Inspecting recorded audio file..."
             )
@@ -489,9 +538,9 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
 
             result.fold(
                 onSuccess = { transcriptionResult ->
-                    if (transcriptionResult.fullText.isBlank()) {
-                        val failure = TranscriptionFailure.EmptyTranscription()
-                        setTranscriptionFailure(lecture, failure.message, failure.recoveryAction)
+                    val validation = TranscriptValidator.validate(transcriptionResult.fullText)
+                    if (!validation.isValid) {
+                        setTranscriptionFailure(lecture, "No speech detected. Please record the lecture again.", "Ensure microphone is close to speaker and not muted. Please record the lecture again.")
                         return@fold
                     }
 
@@ -509,6 +558,7 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
 
                     _transcriptionState.value = TranscriptionUiState(
                         isTranscribing = false,
+                        activeLectureId = lecture.id,
                         progress = 1.0f,
                         stageMessage = "Transcription completed successfully.",
                         successText = transcriptionResult.fullText,
@@ -533,6 +583,7 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         repository.updateLecture(lecture.copy(status = "FAILED"))
         _transcriptionState.value = _transcriptionState.value.copy(
             isTranscribing = false,
+            activeLectureId = lecture.id,
             error = message,
             recoveryAction = action
         )
@@ -584,30 +635,58 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         noteStyle: String = "ACADEMIC",
         detailLevel: String = "STANDARD"
     ) {
-        viewModelScope.launch {
-            _noteGenState.value = AiNoteGenState(isGenerating = true)
+        val textToUse = transcript.correctedText.ifBlank { transcript.originalText }
+        val validation = TranscriptValidator.validate(textToUse)
+        if (!validation.isValid) {
+            _noteGenState.value = AiNoteGenState(
+                isGenerating = false,
+                targetLectureId = lecture.id,
+                error = "No speech detected. Please record the lecture again."
+            )
+            return
+        }
 
+        noteGenJob?.cancel()
+        // 1. Immediately reflect loading state on Main Thread for instant UI feedback
+        _noteGenState.value = AiNoteGenState(
+            isGenerating = true,
+            targetLectureId = lecture.id
+        )
+
+        val targetLang = userProfile.value?.preferredLanguage?.ifBlank { null }
+            ?: recordingLanguage.value.ifBlank { "en-US" }
+
+        noteGenJob = viewModelScope.launch {
             val subject = repository.getSubjectById(lecture.subjectId)
             val subjectName = subject?.name ?: "General Subject"
-            val textToUse = transcript.correctedText.ifBlank { transcript.originalText }
 
             val result = aiService.generateNotes(
                 transcript = textToUse,
                 lectureTitle = lecture.title,
                 subjectName = subjectName,
                 noteStyle = noteStyle,
-                detailLevel = detailLevel
+                detailLevel = detailLevel,
+                targetLanguage = targetLang
             )
 
             result.fold(
                 onSuccess = { noteData ->
+                    // Guard against out-of-order execution if another lecture was selected
+                    if (_noteGenState.value.targetLectureId != lecture.id) {
+                        Log.w(TAG, "Ignoring notes result for outdated lecture: ${lecture.id}")
+                        return@fold
+                    }
+
+                    // Remove previous notes for this lecture to prevent duplicate/stale records
+                    repository.deleteNotesByLecture(lecture.id)
+
                     val noteEntity = NoteEntity(
                         id = UUID.randomUUID().toString(),
                         lectureId = lecture.id,
                         subjectId = lecture.subjectId,
                         style = noteStyle,
                         detailLevel = detailLevel,
-                        title = noteData.title,
+                        title = noteData.title.ifBlank { lecture.title },
                         overview = noteData.overview,
                         keyConceptsJson = JSONArray(noteData.keyConcepts).toString(),
                         definitionsJson = JSONArray(
@@ -634,14 +713,19 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
                     )
 
                     repository.insertNote(noteEntity)
-                    _noteGenState.value = AiNoteGenState(isGenerating = false, generatedNote = noteEntity)
+                    _noteGenState.value = AiNoteGenState(
+                        isGenerating = false,
+                        targetLectureId = lecture.id,
+                        generatedNote = noteEntity
+                    )
 
-                    generateFlashcardsForNote(noteEntity, textToUse, subjectName)
+                    generateFlashcardsForNote(noteEntity, textToUse, subjectName, targetLang)
                 },
                 onFailure = { error ->
                     Log.e(TAG, "Note generation failed", error)
                     _noteGenState.value = AiNoteGenState(
                         isGenerating = false,
+                        targetLectureId = lecture.id,
                         error = error.localizedMessage ?: "Note generation failed"
                     )
                 }
@@ -649,10 +733,26 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun generateFlashcardsForNote(note: NoteEntity, transcript: String, subjectName: String) {
+    private fun generateFlashcardsForNote(
+        note: NoteEntity,
+        transcript: String,
+        subjectName: String,
+        targetLanguage: String = "en-US"
+    ) {
+        val validation = TranscriptValidator.validate(transcript)
+        if (!validation.isValid) {
+            Log.w(TAG, "Transcript invalid or empty; skipping flashcard generation")
+            return
+        }
+
         viewModelScope.launch {
-            val result = aiService.generateFlashcards(transcript, note.overview, subjectName)
+            val result = aiService.generateFlashcards(transcript, note.overview, subjectName, targetLanguage)
             result.onSuccess { cards ->
+                if (cards.isEmpty()) return@onSuccess
+
+                // Delete previous flashcards for this lecture before inserting to prevent duplicate records
+                repository.deleteFlashcardsByLecture(note.lectureId)
+
                 val entities = cards.map { card ->
                     FlashcardEntity(
                         id = UUID.randomUUID().toString(),
@@ -696,7 +796,21 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
 
     fun deleteLecture(lecture: LectureEntity) {
         viewModelScope.launch {
+            if (_noteGenState.value.targetLectureId == lecture.id) {
+                clearNoteGenState()
+            }
+            if (_transcriptionState.value.activeLectureId == lecture.id) {
+                clearTranscriptionState()
+            }
             repository.deleteLecture(lecture)
+        }
+    }
+
+    fun deleteAllLectures() {
+        viewModelScope.launch {
+            clearNoteGenState()
+            clearTranscriptionState()
+            repository.deleteAllLectures()
         }
     }
 
@@ -804,5 +918,10 @@ class OmniCampusViewModel(application: Application) : AndroidViewModel(applicati
     override fun onCleared() {
         super.onCleared()
         audioPlayer.stopAudio()
+        try {
+            wavRecorder.cancelRecording()
+            micTestUtility.resetTest()
+            focusSentryManager.destroy()
+        } catch (_: Exception) {}
     }
 }
